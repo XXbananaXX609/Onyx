@@ -1,0 +1,42 @@
+name: Discord release announcement
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  announce:
+    # Les pré-releases (bêtas) ne sont pas annoncées
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ROLE_ID: ${{ vars.DISCORD_ROLE_ID }}
+          NAME: ${{ github.event.release.name }}
+          TAG: ${{ github.event.release.tag_name }}
+          BODY: ${{ github.event.release.body }}
+        run: |
+          TITLE="${NAME:-$TAG}"
+          PING=""
+          if [ -n "$ROLE_ID" ]; then PING="<@&$ROLE_ID>"; fi
+
+          jq -n \
+            --arg ping "$PING" \
+            --arg role "$ROLE_ID" \
+            --arg title "💎 Onyx $TITLE" \
+            --arg desc "${BODY:0:3800}" \
+            '{
+              username: "Onyx Updates",
+              content: (if $ping == "" then "" else ($ping + " A new Onyx update is out!") end),
+              allowed_mentions: { roles: (if $role == "" then [] else [$role] end) },
+              embeds: [{
+                title: $title,
+                description: ((if $desc == "" then "Bug fixes and improvements." else $desc end)
+                              + "\n\n🔄 Onyx will update automatically the next time you launch it."),
+                color: 6950317
+              }]
+            }' > payload.json
+
+          curl -sSf -H "Content-Type: application/json" -d @payload.json "$WEBHOOK"
